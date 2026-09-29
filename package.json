@@ -1,0 +1,18 @@
+{
+  "name": "opensupport",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "pnpm": "^12.8.1"
+  }
+}
