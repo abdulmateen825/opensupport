@@ -1,1 +1,9 @@
-{ "name": "@opensupport/sdk", "version": "0.1.0", "private": true, "type": "module", "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" } }
+{
+  "name": "@opensupport/sdk",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": { "@opensupport/shared-types": "workspace:*" }
+}

@@ -3,11 +3,11 @@ import { createRoot } from "react-dom/client";
 import "./widget.css";
 
 type ChatMessage = { id: string; sender_type: string; sender_name?: string | null; content: string; source_title?: string | null };
-type ChatWidgetProps = { projectId: string; apiUrl?: string };
+type ChatWidgetProps = { projectId: string; apiUrl?: string; identityToken?: string };
 
 const defaultApiUrl = "http://localhost:8000";
 
-export function ChatWidget({ projectId, apiUrl = defaultApiUrl }: ChatWidgetProps) {
+export function ChatWidget({ projectId, apiUrl = defaultApiUrl, identityToken }: ChatWidgetProps) {
   const [conversationId, setConversationId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -22,7 +22,7 @@ export function ChatWidget({ projectId, apiUrl = defaultApiUrl }: ChatWidgetProp
       try {
         let id = localStorage.getItem(key) ?? "";
         if (!id) {
-          const response = await fetch(`${apiUrl}/api/widget/${projectId}/conversations`, { method: "POST" });
+          const response = await fetch(`${apiUrl}/api/widget/${projectId}/conversations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(identityToken ? { identity_token: identityToken } : {}) });
           if (!response.ok) throw new Error("Couldn't start chat");
           const conversation = await response.json();
           id = conversation.id;
@@ -40,7 +40,7 @@ export function ChatWidget({ projectId, apiUrl = defaultApiUrl }: ChatWidgetProp
     }
     void start();
     return () => { cancelled = true; };
-  }, [apiUrl, projectId]);
+  }, [apiUrl, projectId, identityToken]);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -86,7 +86,7 @@ export function ChatWidget({ projectId, apiUrl = defaultApiUrl }: ChatWidgetProp
 
   async function startNewConversation() {
     try {
-      const response = await fetch(`${apiUrl}/api/widget/${projectId}/conversations`, { method: "POST" });
+      const response = await fetch(`${apiUrl}/api/widget/${projectId}/conversations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(identityToken ? { identity_token: identityToken } : {}) });
       if (!response.ok) throw new Error("Couldn't start a new conversation");
       const conversation = await response.json();
       localStorage.setItem(`opensupport:${projectId}:conversation`, conversation.id);
@@ -111,8 +111,8 @@ export function ChatWidget({ projectId, apiUrl = defaultApiUrl }: ChatWidgetProp
   </section>;
 }
 
-export function mountOpenSupportWidget(element: HTMLElement, projectId: string, apiUrl?: string) {
+export function mountOpenSupportWidget(element: HTMLElement, projectId: string, apiUrl?: string, identityToken?: string) {
   const root = createRoot(element);
-  root.render(<ChatWidget projectId={projectId} apiUrl={apiUrl} />);
+  root.render(<ChatWidget projectId={projectId} apiUrl={apiUrl} identityToken={identityToken} />);
   return () => root.unmount();
 }

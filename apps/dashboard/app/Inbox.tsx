@@ -1,8 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { API, apiFetch } from "./api";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const WS = API.replace(/^http/, "ws");
 type Conversation = { id: string; project_id: string; status: string; assigned_agent: string | null; escalation_reason: string | null; created_at: string };
 type Message = { id: string; sender_type: string; sender_name: string | null; content: string; source_title: string | null; created_at: string };
@@ -30,11 +30,15 @@ export default function Inbox() {
   const [draft, setDraft] = useState("");
   const [online, setOnline] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState("active");
+  const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
 
   async function refreshInbox() {
-    const query = statusFilter === "active" ? "" : `?status=${statusFilter}`;
-    const response = await fetch(`${API}/api/agents/conversations${query}`);
+    const params = new URLSearchParams();
+    if (statusFilter !== "active") params.set("status", statusFilter);
+    if (query.trim()) params.set("q", query.trim());
+    const queryString = params.toString();
+    const response = await apiFetch(`/api/agents/conversations${queryString ? `?${queryString}` : ""}`);
     if (!response.ok) throw new Error("Couldn't load the inbox");
     const items: Conversation[] = await response.json();
     setConversations(items);
@@ -43,31 +47,38 @@ export default function Inbox() {
 
   async function refreshMessages(id: string) {
     if (!id) return;
-    const response = await fetch(`${API}/api/agents/conversations/${id}/messages`);
+    const response = await apiFetch(`/api/agents/conversations/${id}/messages`);
     if (response.ok) setMessages(await response.json());
   }
 
   useEffect(() => {
-    const savedAgent = localStorage.getItem("opensupport:agent-name") ?? "Support Agent";
-    setAgent(savedAgent); setAgentIdentity(savedAgent);
+    void apiFetch("/api/auth/me").then(async (response) => {
+      if (!response.ok) return;
+      const user = await response.json();
+      setAgent(user.display_name); setAgentIdentity(user.display_name);
+    });
   }, []);
 
-  useEffect(() => { void refreshInbox().catch((error: Error) => setNotice(error.message)); }, [statusFilter]);
+  useEffect(() => { void refreshInbox().catch((error: Error) => setNotice(error.message)); }, [statusFilter, query]);
 
-  useEffect(() => connectWithRetry(`${WS}/ws/agents?agent_name=${encodeURIComponent(agentIdentity)}`, (data) => {
+  useEffect(() => {
+    const token = localStorage.getItem("opensupport:access-token") ?? "";
+    return connectWithRetry(`${WS}/ws/agents?access_token=${encodeURIComponent(token)}`, (data) => {
       if (data.online_agents) setOnline(data.online_agents);
       if (data.type === "agent.presence") setOnline((items) => data.online ? [...new Set([...items, data.agent_name])] : items.filter((name) => name !== data.agent_name));
       if (data.type === "conversation.escalated") {
         setNotice(`New escalation: ${data.reason?.replaceAll("_", " ") ?? "needs support"}`);
         void refreshInbox();
       }
-    }), [agentIdentity, statusFilter]);
+    });
+  }, [agentIdentity, statusFilter]);
 
   useEffect(() => { void refreshMessages(selected); }, [selected]);
 
   useEffect(() => {
     if (!selected) return;
-    return connectWithRetry(`${WS}/ws/conversations/${selected}`, (data) => {
+    const token = localStorage.getItem("opensupport:access-token") ?? "";
+    return connectWithRetry(`${WS}/ws/conversations/${selected}?access_token=${encodeURIComponent(token)}`, (data) => {
       if (data.type === "message.created") setMessages((items) => items.some((item) => item.id === data.message.id) ? items : [...items, data.message]);
       if (data.type?.startsWith("conversation.")) void refreshInbox();
     });
@@ -75,7 +86,7 @@ export default function Inbox() {
 
   async function action(path: "assign" | "resolve" | "reopen") {
     if (!selected) return;
-    const response = await fetch(`${API}/api/agents/conversations/${selected}/${path}`, {
+    const response = await apiFetch(`/api/agents/conversations/${selected}/${path}`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent_name: agent }),
     });
     if (!response.ok) { setNotice("That conversation action failed"); return; }
@@ -85,7 +96,7 @@ export default function Inbox() {
   async function send(event: FormEvent) {
     event.preventDefault();
     if (!selected || !draft.trim()) return;
-    const response = await fetch(`${API}/api/agents/conversations/${selected}/messages`, {
+    const response = await apiFetch(`/api/agents/conversations/${selected}/messages`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent_name: agent, content: draft.trim() }),
     });
     if (!response.ok) { setNotice("Message could not be sent"); return; }
@@ -98,8 +109,8 @@ export default function Inbox() {
   const current = conversations.find((conversation) => conversation.id === selected);
   return <div className="inbox-layout">
     <aside className="inbox-list"><div className="inbox-list-head"><div><h2>Conversations</h2><span>{conversations.length} {statusFilter}</span></div><button onClick={() => void refreshInbox()}>↻</button></div>
-      <select className="inbox-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="active">Active conversations</option><option value="resolved">Resolved conversations</option><option value="escalated">Escalated only</option></select>
-      <label className="agent-label">Your agent name<input value={agent} onChange={(event) => setAgent(event.target.value)} onBlur={() => { const name = agent.trim() || "Support Agent"; setAgent(name); setAgentIdentity(name); localStorage.setItem("opensupport:agent-name", name); }} maxLength={120} /></label>
+      <select className="inbox-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="active">Active conversations</option><option value="open">Open</option><option value="assigned">Assigned</option><option value="resolved">Resolved conversations</option><option value="escalated">Escalated only</option></select><input className="inbox-filter" aria-label="Search conversations" placeholder="Search messages" value={query} onChange={(event) => setQuery(event.target.value)} />
+      <label className="agent-label">Signed in as<input value={agent} readOnly /></label>
       <div className="online-line"><i /> Online now: {online.join(", ") || "you"}</div>
       {!conversations.length && <div className="inbox-empty">No open conversations yet.<small>Conversations that need a person will appear here.</small></div>}
       {conversations.map((conversation) => <button key={conversation.id} className={`conversation-row ${conversation.id === selected ? "selected" : ""}`} onClick={() => setSelected(conversation.id)}><span className={`status-dot status-${conversation.status}`} /><span className="conversation-meta"><strong>{conversation.status === "escalated" ? "Needs a reply" : conversation.assigned_agent ?? "Unassigned conversation"}</strong><small>{conversation.escalation_reason?.replaceAll("_", " ") ?? conversation.status} · {new Date(conversation.created_at).toLocaleString()}</small></span></button>)}
