@@ -204,3 +204,107 @@ Do not use `docker compose down -v` unless you intend to permanently delete loca
 - Local service credentials in `.env.example` are for development only. Set unique secrets, HTTPS, private service access, and reviewed migrations before deploying.
 - Webhook endpoints must be public HTTPS targets; private and local network destinations are rejected. Use a public HTTPS test endpoint for webhook tests.
 - The live smoke test needs Docker Desktop running. The backend unit tests and frontend builds can run without the Docker service stack.
+
+## Full feature acceptance checklist
+
+Use a disposable organization for this checklist. The dashboard exposes knowledge, inbox, integration, API key, and webhook controls. Membership, analytics, audit, retention, export, source deletion, and verified order lookup are API features; test them through `http://localhost:8000/docs`. Expand an endpoint there to see its exact current request schema. No order lookup form or analytics page is currently provided by the dashboard.
+
+### Authenticate API requests
+
+Register through the dashboard first. For repeatable PowerShell checks, obtain a separate login token:
+
+```powershell
+$loginBody = @{ email = 'tester@example.com'; password = 'your-test-password' } | ConvertTo-Json
+$sessionResult = Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/auth/login -ContentType 'application/json' -Body $loginBody
+$authHeaders = @{ Authorization = "Bearer $($sessionResult.access_token)" }
+Invoke-RestMethod -Uri http://localhost:8000/api/auth/me -Headers $authHeaders
+$projectList = Invoke-RestMethod -Uri http://localhost:8000/api/projects -Headers $authHeaders
+$testProjectId = $projectList[0].id
+```
+
+Use your registered email and password. In Swagger, select **Authorize** and enter the access token if an authorization control is present; otherwise use PowerShell with `$authHeaders`. Tokens and one-time secrets should remain in your local terminal.
+
+### Accounts, organizations, and permissions
+
+| Feature | Procedure | Expected result |
+| --- | --- | --- |
+| Registration | Create a workspace with a unique email and a password of at least 12 characters. Repeat with the same email. | First registration opens the workspace; duplicate registration is rejected. |
+| Login / logout | Sign out, try an incorrect password, then the correct password. | Incorrect login shows an error; correct login restores access. |
+| Refresh | POST `/api/auth/refresh` with the refresh token from login, following the Swagger schema. | New tokens are returned; reuse of the old refresh token fails. |
+| Membership | GET and POST `/api/organization/members` as an owner; create a test agent. | The member appears in the organization. An agent cannot create members or API keys. |
+| Isolation | Register a second organization and request the first organization's project or conversation using the second token. | The resource is inaccessible; the second workspace lists only its own resources. |
+| API keys | Create a key in Developer tools, copy it once, use it as a Bearer token for GET `/api/projects`, then revoke it and repeat. | Key works before revocation; revoked key is rejected. |
+
+### Projects and knowledge
+
+| Feature | Procedure | Expected result |
+| --- | --- | --- |
+| Projects | Create two named projects and switch between them. | Saved answers and source lists match the selected project. |
+| Allowed hosts | Save `localhost:5173`; load the widget from that host, then from an unlisted host. | Allowed origin can start a conversation; unlisted origin is rejected. |
+| FAQ | Save a unique answer of at least 10 characters. Ask a matching question in the widget. | Reply uses the saved information and identifies its source. |
+| Website ingestion | Add a public help URL, leave the worker running, and reload the knowledge view. | Source progresses to `ready`, or reports a useful failure; indexed content answers a specific question. |
+| PDF ingestion | Upload a small text-based PDF, then ask about text unique to it. | Source reaches `ready` and its text is retrievable. Scanned PDFs need OCR before upload. |
+| Source refresh | Modify a page you control, click Refresh, then reload the knowledge view after the worker completes. | Indexed timestamp updates and new text is retrievable. Source status does not automatically poll. |
+| Source deletion | DELETE `/api/projects/{project_id}/sources/{source_id}` through the API. | Source disappears from the list and its indexed chunks are removed. |
+| Validation | Submit an invalid URL, a non-PDF file, and a private-network website URL. | Invalid inputs are rejected or visibly fail indexing; they do not become ready sources. |
+
+### Conversations and realtime support
+
+1. Open `http://localhost:5173/?project=<PROJECT_ID>` with the preview server running.
+2. Send a supported question. Confirm your message and the assistant reply appear once, with the source when available.
+3. Request a human. Confirm the conversation becomes escalated and appears in Agent inbox.
+4. Take the conversation, reply, and verify the widget receives the reply without refreshing.
+5. Open another agent session to check online presence and assignment visibility.
+6. Resolve the conversation, select the Resolved filter, then reopen it and send another reply.
+7. Search for a unique message phrase and test each status filter. Results should match the query and filter.
+8. Refresh the widget page. The conversation should resume from local storage. Use its new conversation control to start a separate conversation.
+9. Briefly restart the API. Once available, check the inbox reconnects and new replies arrive. Inspect browser Network/WebSocket frames if realtime updates stall.
+
+### Order integration and verified visitors
+
+Configure an order status integration in Developer tools for the active project. The company API must implement `GET /orders/{order_id}`, accept a Bearer integration token and `X-Verified-Customer-ID`, enforce order ownership itself, and return JSON. OpenSupport forwards only `status`, `updated_at`, `estimated_delivery`, `total`, and `currency`. Local HTTP integration URLs are accepted only for `localhost` or `127.0.0.1` in development.
+
+A normal anonymous preview cannot retrieve orders. Generate a signed visitor identity on a trusted server using `backend.app.core.security.create_widget_identity(UUID(project_id), visitor_id)` with the same server configuration as the API, pass it as `identityToken` to `ChatWidget` or the fourth argument of `mountOpenSupportWidget`, and create a new conversation. POST `/api/widget/conversations/{conversation_id}/tools/order-status` using the request fields shown in Swagger, the conversation ID returned on creation and its allowed Origin header. Confirm a matching visitor can see their own order, an anonymous visitor is denied, and another visitor cannot retrieve that order. Remove the integration and confirm lookup no longer succeeds.
+
+### Webhooks, retries, and SDK
+
+- Create a public HTTPS webhook subscribed to `conversation.created`, `conversation.escalated`, `message.created`, and `conversation.resolved`. Copy the signing secret when shown.
+- Trigger each event and inspect delivery history in Developer tools. Confirm the receiver sees the event and verifies the signature against the exact raw request bytes using [developer-platform.md](developer-platform.md).
+- Make the receiver return a failure, trigger an event, and inspect attempts and errors. Restore a successful response and use Retry; reload Developer tools to verify delivery succeeds. Keep both the worker and beat process running for scheduled retries.
+- Delete the endpoint and confirm future events are no longer delivered to it.
+- From a server-side TypeScript app, instantiate `OpenSupportClient` from `@opensupport/sdk` with the API base URL and a test API key. Exercise `listProjects`, `listConversations`, `listMessages`, and `reply` against the test conversation. Check an invalid key produces an error. The SDK currently provides these four methods.
+
+### Analytics, audit, export, and retention
+
+```powershell
+Invoke-RestMethod -Uri http://localhost:8000/api/analytics/overview -Headers $authHeaders
+Invoke-RestMethod -Uri http://localhost:8000/api/audit/events -Headers $authHeaders
+Invoke-RestMethod -Uri http://localhost:8000/api/organization/retention -Headers $authHeaders
+Invoke-RestMethod -Uri http://localhost:8000/api/organization/export -Headers $authHeaders | ConvertTo-Json -Depth 20 | Set-Content -Encoding utf8 local-test-export.json
+```
+
+After creating, assigning, escalating, and resolving test conversations, confirm analytics reflects the available metrics and audit records include performed administrative actions. Inspect the export for only the current organization's data, then delete the local export when finished.
+
+For retention, use a separate disposable organization. PATCH `/api/organization/retention` according to Swagger, create old disposable records in your test database, and POST `/api/organization/retention/prune`. Verify eligible old records are pruned and recent records remain. Pruning deletes data; use test fixtures, never a workspace you need to keep.
+
+### Optional external providers
+
+With no LLM key/model, verify deterministic retrieval and human handoff first. To test generated answers, supply your provider configuration in `.env`, restart the API and worker, and repeat the FAQ and ingestion tests. Confirm unsupported questions do not invent company policy. If configured, trigger an escalation and inspect the notification inbox; external notification delivery requires working Resend credentials and an allowed sender.
+
+## Troubleshooting and test evidence
+
+| Symptom | Check / action |
+| --- | --- |
+| API will not start | Run from repository root; check `.venv`, `.env`, PostgreSQL availability, and completed migrations. |
+| Dashboard cannot reach API | Check `http://localhost:8000/health`, browser Network errors, and CORS origins. Dashboard API configuration is in `apps/dashboard/app/api.ts`. |
+| Port already occupied | Stop the previous process or choose a new port and update the corresponding API URL, allowed hosts, and CORS settings. |
+| Source remains queued | Check the worker is connected to the same Redis/database/storage configuration as the API. Reload the view to fetch its latest status. |
+| PDF fails | Check it contains selectable text; inspect the source error, worker logs, and RustFS availability. |
+| Widget gets 403 | Confirm exact allowed host and the correct project ID. Inspect the project ID, conversation ID, and Origin in Network requests. |
+| Realtime reply missing | Check WebSocket connections to port 8000 and that the agent belongs to the same organization. |
+| Webhook never retries | Check worker and beat, delivery errors, and the public receiver's HTTPS availability. |
+| Build cannot fetch fonts | The demo app may need network access during its Next.js build; inspect the first build error. |
+
+Record the commit hash (`git rev-parse HEAD`), command exit codes, service versions, and pass/fail for each checklist item. Automated checks cover only the focused unit suite and frontend compilation; passing them does not prove service-backed flows. Mark external-provider and integration tests as skipped when no configured test service exists.
+
+For a clean restart that preserves data, stop local processes with Ctrl+C, run `docker compose down`, then repeat Steps 4 and 5. To inspect container health use `docker compose ps`; to verify the API use `Invoke-RestMethod http://localhost:8000/health`.
