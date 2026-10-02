@@ -45,9 +45,14 @@ class ConnectionManager:
         for socket in stale:
             await self.disconnect(key, socket, self._socket_agents.get(socket))
 
-    async def online_agents(self) -> list[str]:
+    async def online_agents(self, organization_id: str | None = None) -> list[str]:
         async with self._lock:
-            return sorted(self._agents)
+            keys = list(self._agents)
+        if organization_id:
+            prefix = f"{organization_id}:"
+            keys = [key for key in keys if key.startswith(prefix)]
+            return sorted(key.split(":", 2)[2] for key in keys)
+        return sorted(keys)
 
 
 hub = ConnectionManager()
@@ -56,5 +61,5 @@ hub = ConnectionManager()
 async def publish_conversation(conversation_id: str, event: dict) -> None:
     envelope = {"conversation_id": conversation_id, **event}
     await hub.broadcast(f"conversation:{conversation_id}", envelope)
-    if event.get("type") == "conversation.escalated":
-        await hub.broadcast("agents", envelope)
+    if event.get("type") == "conversation.escalated" and event.get("organization_id"):
+        await hub.broadcast(f"agents:{event['organization_id']}", envelope)
