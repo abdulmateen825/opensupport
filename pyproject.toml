@@ -14,6 +14,9 @@ dependencies = [
     "qdrant-client>=1.12,<2.0",
     "httpx>=0.28,<1.0",
     "boto3>=1.35,<2.0",
+    "python-multipart>=0.0.20,<1.0",
+    "pypdf>=5.1,<6.0",
+    "cryptography>=43,<46",
 ]
 
 [tool.uv]
@@ -31,6 +34,10 @@ dev = [
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["backend/tests"]
+pythonpath = ["."]

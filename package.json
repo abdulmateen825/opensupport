@@ -11,8 +11,5 @@
   "devDependencies": {
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
-  },
-  "dependencies": {
-    "pnpm": "^12.8.1"
   }
 }

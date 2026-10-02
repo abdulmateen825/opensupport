@@ -2,14 +2,20 @@
 __pycache__/
 *.py[cod]
 .venv/
+.corepack/
+.turbo/
+.local-bin/
+.docker-config/
+*.tsbuildinfo
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+celerybeat-schedule*
 
 # JavaScript / TypeScript
 node_modules/
-.pnpm-store/
 .next/
+.pnpm-store/
 dist/
 coverage/
 
