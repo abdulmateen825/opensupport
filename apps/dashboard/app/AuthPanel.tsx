@@ -15,7 +15,7 @@ export default function AuthPanel({ onAuthenticated }: { onAuthenticated: () => 
   const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError("");
+    event.preventDefault(); if (busy) return; setBusy(true); setError("");
     try {
       const payload = mode === "login" ? { email, password } : {
         email, password, display_name: displayName, organization_name: organizationName,
@@ -24,7 +24,7 @@ export default function AuthPanel({ onAuthenticated }: { onAuthenticated: () => 
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.detail ?? "Authentication failed");
+      if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : Array.isArray(result.detail) ? result.detail.map((item: { msg: string }) => item.msg).join("; ") : "Authentication failed");
       const auth = result as AuthResult;
       localStorage.setItem("opensupport:access-token", auth.access_token);
       localStorage.setItem("opensupport:refresh-token", auth.refresh_token);

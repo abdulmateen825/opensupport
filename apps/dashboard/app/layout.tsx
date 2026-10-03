@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./style.css";
+import "./complete.css";
 
 export const metadata: Metadata = { title: "OpenSupport Admin", description: "Manage projects and support knowledge" };
 
