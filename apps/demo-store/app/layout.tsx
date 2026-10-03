@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./style.css";
+import "./complete.css";
 
 export const metadata: Metadata = { title: "Northstar Supply | Demo Store", description: "OpenSupport demo storefront" };
 
