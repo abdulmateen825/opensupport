@@ -7,6 +7,7 @@ object implementing ``complete(system_prompt, user_prompt)``.
 
 from importlib.metadata import entry_points
 from typing import Protocol
+from urllib.parse import urlparse
 
 import httpx
 
@@ -24,13 +25,17 @@ class OpenAICompatibleProvider:
         self.base_url = base_url.rstrip("/")
 
     async def complete(self, system_prompt: str, user_prompt: str) -> str:
+        payload = {"model": self.model, "temperature": 0.2, "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]}
+        if urlparse(self.base_url).hostname == "api.groq.com" and self.model == "qwen/qwen3.8-27b":
+            # Use Qwen's instruct mode for concise customer replies, without thinking text.
+            payload.update(reasoning_effort="none", reasoning_format="hidden", max_completion_tokens=512)
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
-                json={"model": self.model, "temperature": 0.2, "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ]},
+                json=payload,
                 headers={"Authorization": f"Bearer {self.api_key}"},
             )
             response.raise_for_status()

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 import httpx
 import re
 import secrets
@@ -8,14 +9,14 @@ from urllib.parse import quote, urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db.session import get_session
 from backend.app.core.config import settings
 from backend.app.core.security import require_roles, verify_widget_identity
 from backend.app.models import (
-    AnalyticsEvent, AuditEvent, Conversation, Integration, KnowledgeEntry,
+    AnalyticsEvent, AuditEvent, Conversation, Integration, KnowledgeChunk, KnowledgeEntry,
     KnowledgeSource, Message, Project, User, WebhookDelivery, WebhookEndpoint,
 )
 from backend.app.schemas import (
@@ -211,6 +212,78 @@ async def list_knowledge(
     return list((await session.scalars(
         select(KnowledgeEntry).where(KnowledgeEntry.project_id == project_id)
     )).all())
+
+
+@router.patch("/projects/{project_id}/knowledge/{entry_id}", response_model=KnowledgeOut)
+async def update_knowledge(
+    project_id: UUID, entry_id: UUID, body: KnowledgeCreate,
+    user: User = Depends(require_roles(*ADMIN_ROLES)), session: AsyncSession = Depends(get_session),
+):
+    entry = await session.scalar(select(KnowledgeEntry).join(Project).where(
+        KnowledgeEntry.id == entry_id, KnowledgeEntry.project_id == project_id,
+        Project.organization_id == user.organization_id,
+    ))
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Help content not found")
+    sources = list((await session.scalars(select(KnowledgeSource).where(
+        KnowledgeSource.knowledge_entry_id == entry.id,
+    ).with_for_update())).all())
+    if any(source.status == "processing" for source in sources):
+        raise HTTPException(status_code=409, detail="This answer is being indexed. Please try again shortly.")
+    entry.title = body.title
+    entry.content = body.content
+    if not sources:
+        source = KnowledgeSource(project_id=project_id, kind="text", title=entry.title,
+                                 knowledge_entry_id=entry.id, status="pending")
+        session.add(source)
+        sources.append(source)
+    for source in sources:
+        source.title = entry.title
+        source.status = "pending"
+        source.error = None
+        source.last_indexed_at = None
+        # Invalidate canonical chunks immediately, so retrieval cannot return the old answer.
+        await session.execute(delete(KnowledgeChunk).where(KnowledgeChunk.source_id == source.id))
+    _audit(session, user, "knowledge.updated", "knowledge_entry", str(entry.id), {"title": entry.title})
+    await session.commit()
+    await session.refresh(entry)
+    for source in sources:
+        try:
+            await _enqueue_source(source.id)
+        except Exception:
+            source.status = "failed"
+            source.error = "Background worker queue is unavailable"
+            await session.commit()
+    return entry
+
+
+@router.delete("/projects/{project_id}/knowledge/{entry_id}", status_code=204)
+async def delete_knowledge(
+    project_id: UUID, entry_id: UUID,
+    user: User = Depends(require_roles(*ADMIN_ROLES)), session: AsyncSession = Depends(get_session),
+):
+    entry = await session.scalar(select(KnowledgeEntry).join(Project).where(
+        KnowledgeEntry.id == entry_id, KnowledgeEntry.project_id == project_id,
+        Project.organization_id == user.organization_id,
+    ))
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Help content not found")
+    sources = list((await session.scalars(select(KnowledgeSource).where(
+        KnowledgeSource.knowledge_entry_id == entry.id,
+    ).with_for_update())).all())
+    if any(source.status == "processing" for source in sources):
+        raise HTTPException(status_code=409, detail="This answer is being indexed. Please try again shortly.")
+    for source in sources:
+        await session.delete(source)
+    await session.delete(entry)
+    _audit(session, user, "knowledge.deleted", "knowledge_entry", str(entry.id))
+    await session.commit()
+    for source in sources:
+        try:
+            await remove_source_vectors(project_id, user.organization_id, source.id)
+        except Exception:
+            # Vector results are checked against canonical chunk rows, which are now deleted.
+            logger.warning("Could not remove deleted knowledge vectors for source %s", source.id)
 
 
 @router.post("/projects/{project_id}/sources/url", response_model=KnowledgeSourceOut, status_code=202)
@@ -551,12 +624,26 @@ async def get_order_status(
                 "Authorization": f"Bearer {decrypt_secret(integration.encrypted_token)}",
                 "X-Verified-Customer-ID": conversation.visitor_id,
             })
+            if response.status_code == 404:
+                raise HTTPException(status_code=404, detail="Order not found for this customer")
             response.raise_for_status()
             data = response.json()
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(status_code=502, detail="The company order service is unavailable") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("status"), str):
+        raise HTTPException(status_code=502, detail="The company order service returned an invalid order")
     # Return a small allowlisted result only; never proxy arbitrary company API data.
-    safe_result = {key: data[key] for key in ("status", "updated_at", "estimated_delivery", "total", "currency") if key in data}
+    safe_result = {"status": data["status"]}
+    for key in ("updated_at", "estimated_delivery", "currency"):
+        if isinstance(data.get(key), str):
+            safe_result[key] = data[key]
+    if isinstance(data.get("total"), (int, float, str)) and not isinstance(data.get("total"), bool):
+        try:
+            total = float(data["total"])
+            if math.isfinite(total):
+                safe_result["total"] = total
+        except ValueError:
+            pass
     return {"order_id": body.order_id, **safe_result}
 
 
@@ -668,6 +755,16 @@ async def send_message(
     _verify_widget_origin(project, request)
     if conversation.status == "resolved":
         raise HTTPException(status_code=409, detail="This conversation is resolved")
+    recovered = (
+        conversation.status == "escalated"
+        and not conversation.assigned_agent
+        and conversation.escalation_reason in {"no_relevant_knowledge", "ai_provider_unavailable"}
+    )
+    if recovered:
+        # Recover legacy automatic handoffs without interrupting a requested human or an agent.
+        conversation.status = "open"
+        conversation.escalation_reason = None
+        conversation.escalated_at = None
     customer_message = Message(conversation_id=conversation.id, sender_type="customer", content=body.content)
     session.add(customer_message)
     await session.flush()
@@ -686,10 +783,9 @@ async def send_message(
         else:
             reply, source = await answer_question(session, conversation, body.content)
     except httpx.HTTPError:
-        reason = "ai_provider_unavailable"
-        reply, source = "The assistant is temporarily unavailable. I’m bringing a support agent into this conversation.", None
-    if source is None:
-        reason = reason or "no_relevant_knowledge"
+        logger.warning("Help retrieval unavailable for conversation %s", conversation.id)
+        reply, source = "I can't access our help content right now. Please try again shortly, or ask to speak to a support agent.", None
+    if reason:
         conversation.status = "escalated"
         conversation.escalation_reason = reason
         conversation.escalated_at = datetime.now(timezone.utc)
@@ -705,6 +801,8 @@ async def send_message(
     await session.commit()
     await session.refresh(customer_message)
     await session.refresh(assistant_message)
+    if recovered:
+        await publish_conversation(str(conversation.id), {"type": "conversation.reopened", "status": "open"})
     await publish_conversation(str(conversation.id), _message_event(customer_message))
     await publish_conversation(str(conversation.id), _message_event(assistant_message))
     await _emit_webhook_safely(session, project.organization_id, project.id, "message.created", {
