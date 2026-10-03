@@ -94,7 +94,7 @@ Make sure Docker Desktop is running, then run these from the repository root:
 
 ```powershell
 docker compose config --quiet
-docker compose up -d postgres redis qdrant rustfs
+docker compose up -d --wait --wait-timeout 120 postgres redis qdrant rustfs
 & .venv\Scripts\python.exe -m alembic upgrade head
 ```
 

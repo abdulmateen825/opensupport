@@ -116,3 +116,5 @@ Press `Ctrl+C` in each app terminal to stop its process. Then run `docker compos
 - [Developer API and webhooks](docs/developer-platform.md)
 - [Operations and deployment notes](docs/phase-3-operations.md)
 - [Contributing](CONTRIBUTING.md)
+- [App screens and workflows](docs/APP_WORKFLOWS.md)
+- [Demo checkout and order tracking](docs/DEMO_ORDER_TRACKING.md)
