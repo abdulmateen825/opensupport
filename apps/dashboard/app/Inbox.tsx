@@ -7,7 +7,9 @@ const WS = API.replace(/^http/, "ws");
 type Conversation = { id: string; project_id: string; status: string; assigned_agent: string | null; escalation_reason: string | null; created_at: string };
 type Message = { id: string; sender_type: string; sender_name: string | null; content: string; source_title: string | null; created_at: string };
 
-function connectWithRetry(url: string, onMessage: (data: Record<string, any>) => void) {
+type SocketEvent = { type?: string; online_agents?: string[]; online?: boolean; agent_name?: string; reason?: string; message?: Message };
+
+function connectWithRetry(url: string, onMessage: (data: SocketEvent) => void) {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let socket: WebSocket | undefined;
@@ -91,7 +93,7 @@ export default function Inbox({ projectId = "" }: { projectId?: string }) {
     const token = localStorage.getItem("opensupport:access-token") ?? "";
     return connectWithRetry(`${WS}/ws/agents?access_token=${encodeURIComponent(token)}`, (data) => {
       if (data.online_agents) setOnline(data.online_agents);
-      if (data.type === "agent.presence") setOnline((items) => data.online ? [...new Set([...items, data.agent_name])] : items.filter((name) => name !== data.agent_name));
+      if (data.type === "agent.presence" && data.agent_name) { const agentName = data.agent_name; setOnline((items) => data.online ? [...new Set([...items, agentName])] : items.filter((name) => name !== agentName)); }
       if (data.type === "conversation.escalated") {
         setNotice(`New escalation: ${data.reason?.replaceAll("_", " ") ?? "needs support"}`);
         void safe(refreshInbox);
@@ -105,7 +107,7 @@ export default function Inbox({ projectId = "" }: { projectId?: string }) {
     if (!selected) return;
     const token = localStorage.getItem("opensupport:access-token") ?? "";
     return connectWithRetry(`${WS}/ws/conversations/${selected}?access_token=${encodeURIComponent(token)}`, (data) => {
-      if (data.type === "message.created") setMessages((items) => items.some((item) => item.id === data.message.id) ? items : [...items, data.message]);
+      if (data.type === "message.created" && data.message) { const message = data.message; setMessages((items) => items.some((item) => item.id === message.id) ? items : [...items, message]); }
       if (data.type?.startsWith("conversation.")) void safe(refreshInbox);
     });
   }, [selected]);
