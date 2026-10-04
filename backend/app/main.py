@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 from uuid import UUID
 from redis.asyncio import Redis
@@ -15,6 +14,7 @@ from backend.app.db.session import engine, SessionLocal
 from backend.app.models import Base, Conversation, Project, User
 from backend.app.websocket.manager import hub
 from backend.app.middleware.rate_limit import TenantRateLimitMiddleware, rate_limit_redis
+from backend.app.middleware.cors import WidgetAwareCORSMiddleware
 
 
 @asynccontextmanager
@@ -57,11 +57,8 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="OpenSupport API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    WidgetAwareCORSMiddleware,
+    admin_origins=settings.allowed_origins,
 )
 app.add_middleware(TenantRateLimitMiddleware)
 app.include_router(router)

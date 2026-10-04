@@ -59,9 +59,11 @@ def encode_token(user: User, token_type: str, lifetime_seconds: int) -> str:
     return f"{header}.{claims}.{_b64encode(signature)}"
 
 
-def create_widget_identity(project_id: UUID, visitor_id: str, lifetime_seconds: int = 300) -> str:
+def create_widget_identity(project_id: UUID, visitor_id: str, lifetime_seconds: int | None = None) -> str:
     """Sign visitor identity on the trusted company backend, never in browser JavaScript."""
     now = int(time.time())
+    if lifetime_seconds is None:
+        lifetime_seconds = settings.identity_token_minutes * 60
     header = _b64encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
     claims = _b64encode(json.dumps({
         "project_id": str(project_id), "visitor_id": visitor_id[:160], "typ": "widget_identity",

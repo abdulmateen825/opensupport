@@ -1,4 +1,7 @@
 from types import SimpleNamespace
+import base64
+import json
+import time
 from uuid import uuid4
 
 import pytest
@@ -44,10 +47,22 @@ def test_widget_identity_is_bound_to_a_project():
         verify_widget_identity(token, uuid4())
 
 
+def test_widget_identity_uses_configured_default_lifetime(monkeypatch):
+    from backend.app.core.security import settings
+    monkeypatch.setattr(settings, "identity_token_minutes", 2)
+    before = int(time.time())
+    payload = create_widget_identity(uuid4(), "customer").split(".")[1]
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    assert before + 120 <= claims["exp"] <= int(time.time()) + 120
+
+
 def test_tampered_access_token_is_rejected():
     user = SimpleNamespace(id=uuid4(), token_version=0)
     token = encode_token(user, "access", 60)
-    altered = token[:-1] + ("A" if token[-1] != "A" else "B")
+    header, claims, signature = token.split(".")
+    # Change significant bits; the last base64 character can differ only in padding bits.
+    altered_signature = ("A" if signature[0] != "A" else "B") + signature[1:]
+    altered = f"{header}.{claims}.{altered_signature}"
 
     with pytest.raises(HTTPException) as error:
         decode_token(altered, "access")

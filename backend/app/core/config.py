@@ -1,9 +1,10 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from urllib.parse import urlparse
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
     app_env: str = "development"
     app_secret_key: str = "change-me"
     database_url: str = "postgresql+asyncpg://opensupport:opensupport@localhost:5432/opensupport"
@@ -40,6 +41,14 @@ class Settings(BaseSettings):
                 raise ValueError("ENCRYPTION_KEY must be a unique secret of at least 32 characters in production")
             if self.widget_identity_secret.startswith("change-me") or len(self.widget_identity_secret) < 32:
                 raise ValueError("WIDGET_IDENTITY_SECRET must be a unique secret of at least 32 characters in production")
+            if len({self.app_secret_key, self.encryption_key, self.widget_identity_secret}) != 3:
+                raise ValueError("Production signing and encryption secrets must be distinct")
+            if not self.allowed_origins or any(
+                urlparse(origin).scheme != "https" or not urlparse(origin).hostname
+                or urlparse(origin).path not in {"", "/"} or "*" in origin
+                for origin in self.allowed_origins
+            ):
+                raise ValueError("CORS_ORIGINS must contain explicit HTTPS dashboard origins in production")
         return self
 
     @property
