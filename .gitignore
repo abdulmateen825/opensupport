@@ -24,6 +24,7 @@ coverage/
 .env.*
 !.env.example
 !**/.env.local.example
+!.env.production.example
 data/
 uploads/
 

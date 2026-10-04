@@ -8,7 +8,7 @@ services:
     ports: ["5432:5432"]
     volumes: ["postgres_data:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U opensupport -d opensupport"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U opensupport -d opensupport"]
       interval: 2s
       timeout: 5s
       retries: 30
@@ -40,7 +40,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    command: ["uv", "run", "celery", "-A", "backend.app.workers.celery_app.celery_app", "worker", "--beat", "--loglevel=INFO"]
+    command: ["celery", "-A", "backend.app.workers.celery_app.celery_app", "worker", "--beat", "--schedule=/app/beat/celerybeat-schedule", "--loglevel=INFO"]
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://opensupport:opensupport@postgres:5432/opensupport

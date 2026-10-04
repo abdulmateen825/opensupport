@@ -1,0 +1,111 @@
+name: opensupport-production
+
+x-backend: &backend
+  image: opensupport-backend:local
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  env_file: .env.production
+  environment:
+    APP_ENV: production
+    DATABASE_URL: postgresql+asyncpg://opensupport:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/opensupport
+    REDIS_URL: redis://redis:6379/0
+    QDRANT_URL: http://qdrant:6333
+    S3_ENDPOINT_URL: http://rustfs:9000
+  restart: unless-stopped
+  init: true
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    qdrant:
+      condition: service_started
+    rustfs:
+      condition: service_started
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: opensupport
+      POSTGRES_USER: opensupport
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U opensupport -d opensupport"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis_data:/data"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  qdrant:
+    image: ${QDRANT_IMAGE:?Set an exact QDRANT_IMAGE version or digest}
+    volumes: ["qdrant_data:/qdrant/storage"]
+    restart: unless-stopped
+  rustfs:
+    image: ${RUSTFS_IMAGE:?Set an exact RUSTFS_IMAGE version or digest}
+    command: /data
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY}
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "false"
+    volumes: ["rustfs_data:/data"]
+    restart: unless-stopped
+  api:
+    <<: *backend
+    # Keep one API process until the in-memory WebSocket hub is distributed.
+    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  worker:
+    <<: *backend
+    command: ["celery", "-A", "backend.app.workers.celery_app.celery_app", "worker", "--loglevel=INFO"]
+  beat:
+    <<: *backend
+    command: ["celery", "-A", "backend.app.workers.celery_app.celery_app", "beat", "--loglevel=INFO", "--schedule=/app/beat/celerybeat-schedule"]
+    volumes: ["beat_data:/app/beat"]
+  dashboard:
+    build:
+      context: .
+      dockerfile: deploy/production/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Set the public HTTPS API URL}
+    restart: unless-stopped
+    init: true
+  proxy:
+    image: caddy:2-alpine
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN}
+      DASHBOARD_DOMAIN: ${DASHBOARD_DOMAIN:?Set DASHBOARD_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    volumes:
+      - ./deploy/production/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api, dashboard]
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  rustfs_data:
+  beat_data:
+  caddy_data:
+  caddy_config:
