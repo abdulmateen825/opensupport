@@ -42,6 +42,7 @@ from backend.app.schemas import (
     WebhookOut,
 )
 from backend.app.services.assistant import answer_question
+from backend.app.services.shopping import ShoppingIntentRequest, interpret_shopping
 from backend.app.services.notifications import send_escalation_notification
 from backend.app.services.encryption import decrypt_secret, encrypt_secret
 from backend.app.services.ingestion import validate_public_url
@@ -598,6 +599,18 @@ async def retry_webhook_delivery(
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Webhook queue is unavailable") from exc
     return {"status": "queued"}
+
+
+@router.post("/widget/{project_id}/shopping/intent")
+async def get_shopping_intent(
+    project_id: UUID, body: ShoppingIntentRequest, request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    _verify_widget_origin(project, request)
+    return await interpret_shopping(body)
 
 
 @router.post("/widget/conversations/{conversation_id}/tools/order-status")
