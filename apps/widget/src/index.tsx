@@ -1,15 +1,21 @@
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./widget.css";
+import { ProductDiscovery } from "./ProductDiscovery";
+import { routeCustomerMessage } from "./routing";
+import type { ShoppingAdapter } from "./shopping";
 import { OrderTracking, type OrderStatus } from "./OrderTracking";
 export type { OrderStatus } from "./OrderTracking";
+export type { Product, SearchIntent, CatalogSearchResult, CartSelection, CartAddition, ShoppingAdapter } from "./shopping";
 
 type ChatMessage = { id: string; sender_type: string; sender_name?: string | null; content: string; source_title?: string | null };
-type ChatWidgetProps = { projectId: string; apiUrl?: string; identityToken?: string; orderLookup?: (id: string) => Promise<OrderStatus>; initialOrderId?: string };
+export type ChatWidgetProps = { projectId: string; apiUrl?: string; identityToken?: string; orderLookup?: (id: string) => Promise<OrderStatus>; initialOrderId?: string; shoppingAdapter?: ShoppingAdapter; brandName?: string; initialShoppingQuery?: string; initialProductId?: string; initialRequestId?: number };
 
 const defaultApiUrl = "http://localhost:8000";
 
-export function ChatWidget({ projectId, apiUrl = defaultApiUrl, identityToken, orderLookup, initialOrderId = "" }: ChatWidgetProps) {
+export function ChatWidget({ projectId, apiUrl = defaultApiUrl, identityToken, orderLookup, initialOrderId = "", shoppingAdapter, brandName = "OpenSupport", initialShoppingQuery, initialProductId, initialRequestId }: ChatWidgetProps) {
+  const [discovering, setDiscovering] = useState(false);
+  const [shoppingQuery, setShoppingQuery] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [connecting, setConnecting] = useState(false);
   const [tracking, setTracking] = useState(false);
@@ -23,7 +29,12 @@ export function ChatWidget({ projectId, apiUrl = defaultApiUrl, identityToken, o
   const [starting, setStarting] = useState(false);
   const messageList = useRef<HTMLDivElement>(null);
   const waitingForAgent = conversationStatus === "escalated" || conversationStatus === "assigned";
-  useEffect(() => { if (initialOrderId) { setTrackingId(initialOrderId); setTracking(true); } }, [initialOrderId]);
+  useEffect(() => { if (shoppingAdapter && !waitingForAgent && conversationStatus !== "resolved" && (initialShoppingQuery !== undefined || initialProductId)) { setShoppingQuery(initialShoppingQuery ?? ""); setDiscovering(true); setTracking(false); } }, [initialShoppingQuery, initialProductId, initialRequestId]);
+  useEffect(() => { if (!orderLookup) setTracking(false); if (!shoppingAdapter) setDiscovering(false); }, [orderLookup, shoppingAdapter]);
+  const draftRoute = routeCustomerMessage(draft, conversationStatus, !!shoppingAdapter, !!orderLookup);
+  useEffect(() => { if (waitingForAgent || conversationStatus === "resolved") setDiscovering(false); }, [waitingForAgent, conversationStatus]);
+  useEffect(() => { if (orderLookup && initialOrderId) { setTrackingId(initialOrderId); setTracking(true); setDiscovering(false); } }, [initialOrderId, initialRequestId, orderLookup]);
+  useEffect(() => { if (initialRequestId !== undefined && initialShoppingQuery === undefined && !initialProductId && !initialOrderId) { setTracking(false); setDiscovering(false); } }, [initialRequestId, initialShoppingQuery, initialProductId, initialOrderId]);
 
   useEffect(() => {
     const list = messageList.current;
@@ -91,8 +102,10 @@ export function ChatWidget({ projectId, apiUrl = defaultApiUrl, identityToken, o
 
   async function send(event: FormEvent) {
     event.preventDefault();
-    if (!busy && !waitingForAgent && /\b(track(?:ing)?(?:\s+(?:my|an|the))?\s+order|where\s+is\s+my\s+order|NS-\d+)\b/i.test(draft)) {
-      setTrackingId(draft.match(/\bNS-\d+\b/i)?.[0]?.toUpperCase() ?? ""); setTracking(true); setDraft(""); return;
+    if (busy || starting || !draft.trim()) return;
+    if (draftRoute === "shopping" && shoppingAdapter) { setShoppingQuery(draft.trim()); setDiscovering(true); setTracking(false); setDraft(""); return; }
+    if (draftRoute === "order" && orderLookup) {
+      setTrackingId(draft.match(/\bNS-\d+\b/i)?.[0]?.toUpperCase() ?? ""); setTracking(true); setDiscovering(false); setDraft(""); return;
     }
     if (!draft.trim() || !conversationId || busy) return;
     setBusy(true); setError("");
@@ -126,22 +139,16 @@ export function ChatWidget({ projectId, apiUrl = defaultApiUrl, identityToken, o
       if (!response.ok) throw new Error("Couldn't start a new conversation");
       const conversation = await response.json();
       if (!identityToken) localStorage.setItem(`opensupport:${apiUrl}:${projectId}:conversation`, conversation.id);
-      setConversationId(conversation.id); setMessages([]); setDraft(""); setConversationStatus("open"); setError("");
+      setDiscovering(false); setTracking(false); setShoppingQuery(""); setConversationId(conversation.id); setMessages([]); setDraft(""); setConversationStatus("open"); setError("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Couldn't start a new conversation"); }
     finally { setStarting(false); }
   }
 
   return <section className="os-chat" aria-label="OpenSupport chat">
-    <header className="os-chat__header"><span className="os-chat__dot" /> <div><strong>OpenSupport</strong><small>{waitingForAgent ? "Waiting for a support agent" : conversationStatus === "resolved" ? "Conversation resolved" : "Ask us anything"}</small></div></header>
-    <nav className="os-chat__tabs" aria-label="Support options"><button aria-pressed={!tracking} onClick={() => setTracking(false)}>Chat</button><button aria-pressed={tracking} onClick={() => setTracking(true)}>Track an order</button></nav>
-    {tracking ? <OrderTracking initialOrderId={trackingId} lookup={orderLookup ?? (async (id) => {
-      if (!conversationId) throw new Error("Start a connected chat before looking up an order.");
-      const response = await fetch(`${apiUrl}/api/widget/conversations/${conversationId}/tools/order-status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_id: id }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Order lookup failed. Please try again.");
-      return data;
-    })} /> : <div className="os-chat__messages" ref={messageList} aria-live="polite">
-      {!projectId && <p className="os-chat__welcome">Demo tracking is ready. Use Track an order above. Configure a project to enable support chat.</p>}
+    <header className="os-chat__header"><span className="os-chat__dot" /> <div><strong>{brandName}</strong><small>{waitingForAgent ? "Waiting for a support agent" : conversationStatus === "resolved" ? "Conversation resolved" : "Ask us anything"}</small></div></header>
+    <nav className="os-chat__tabs" aria-label="Support options"><button aria-pressed={!tracking && !discovering} onClick={() => { setTracking(false); setDiscovering(false); }}>Chat</button>{shoppingAdapter && <button aria-pressed={discovering} disabled={waitingForAgent || conversationStatus === "resolved"} onClick={() => { setDiscovering(true); setTracking(false); }}>Find products</button>}{orderLookup && <button aria-pressed={tracking} onClick={() => { setTracking(true); setDiscovering(false); }}>Track order</button>}</nav>
+    {discovering && shoppingAdapter ? <ProductDiscovery adapter={shoppingAdapter} initialQuery={shoppingQuery} initialProductId={initialProductId} requestId={initialRequestId} /> : tracking && orderLookup ? <OrderTracking key={initialRequestId} initialOrderId={trackingId} lookup={orderLookup} /> : <div className="os-chat__messages" ref={messageList} aria-live="polite">
+      {!projectId && <p className="os-chat__welcome">General support needs a connected project. Website-enabled tools are available in the tabs above.</p>}
       {messages.length === 0 && <p className="os-chat__welcome">Hi there! How can we help?</p>}
       {connecting && <p className="os-chat__activity" role="status">Connecting to support...</p>}
       {messages.map((message) => <article key={message.id} className={`os-chat__message os-chat__message--${message.sender_type}`}>
@@ -150,17 +157,17 @@ export function ChatWidget({ projectId, apiUrl = defaultApiUrl, identityToken, o
       {busy && <p className="os-chat__activity" role="status">{waitingForAgent ? "Sending to the support team…" : "Preparing your answer…"}</p>}
       {error && <div className="os-chat__error" role="alert"><p>{error}</p>{!conversationId && projectId && <button className="os-chat__new" onClick={() => setAttempt((value) => value + 1)}>Retry connection</button>}</div>}
     </div>}
-    {!tracking && waitingForAgent && <div className="os-chat__handoff" role="status">Your messages are going to the support team. An agent will reply here. Start a new chat to ask the assistant another question.</div>}
-    {!tracking && <form className="os-chat__form" onSubmit={send}>
+    {!tracking && !discovering && waitingForAgent && <div className="os-chat__handoff" role="status">Your messages are going to the support team. An agent will reply here. Start a new chat to ask the assistant another question.</div>}
+    {!tracking && !discovering && <form className="os-chat__form" onSubmit={send}>
       <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={waitingForAgent ? "Message the support team..." : "Write a message..."} aria-label="Message" maxLength={8000} disabled={busy || starting || conversationStatus === "resolved"} />
-      <button disabled={busy || starting || (!conversationId && !(orderLookup && /\b(track(?:ing)?(?:\s+(?:my|an|the))?\s+order|where\s+is\s+my\s+order|NS-\d+)\b/i.test(draft))) || !draft.trim() || conversationStatus === "resolved"} aria-label="Send message">{busy ? "Sending…" : "Send"}</button>
+      <button disabled={busy || starting || (!conversationId && !(draftRoute === "shopping" && shoppingAdapter) && !(draftRoute === "order" && orderLookup)) || !draft.trim() || conversationStatus === "resolved"} aria-label="Send message">{busy ? "Sending…" : "Send"}</button>
     </form>}
     <footer className="os-chat__footer"><span>Powered by OpenSupport</span><button className="os-chat__new" disabled={busy || starting || !projectId} onClick={() => void startNewConversation()}>{starting ? "Starting…" : "New conversation"}</button></footer>
   </section>;
 }
 
-export function mountOpenSupportWidget(element: HTMLElement, projectId: string, apiUrl?: string, identityToken?: string) {
+export function mountOpenSupportWidget(element: HTMLElement, projectId: string, apiUrl?: string, identityToken?: string, options?: Omit<ChatWidgetProps, "projectId" | "apiUrl" | "identityToken">) {
   const root = createRoot(element);
-  root.render(<ChatWidget projectId={projectId} apiUrl={apiUrl} identityToken={identityToken} />);
+  root.render(<ChatWidget {...options} projectId={projectId} apiUrl={apiUrl} identityToken={identityToken} />);
   return () => root.unmount();
 }
