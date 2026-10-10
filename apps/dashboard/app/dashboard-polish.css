@@ -133,3 +133,15 @@ th, td { padding: 12px 13px; }
   .reply-form { align-items: stretch; flex-direction: column; }
   .reply-form button.primary { align-self: flex-end; }
 }
+
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid #8ba0ee;
+  outline-offset: 2px;
+}
+.conversation-row[aria-pressed="true"] { color: #304db9; }
+.metric-skeleton { background-image: linear-gradient(110deg, transparent 25%, #ffffff80 45%, transparent 65%); }
+.inbox-toast { border-color: #dce7df; box-shadow: 0 8px 24px #17253b16; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
