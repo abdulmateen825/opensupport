@@ -18,12 +18,20 @@ export function Overview({ onNavigate }: { onNavigate: (view: "inbox" | "knowled
     finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
-  const metrics: [string, number][] = data ? [["Conversations", data.conversations_total], ["Open", data.open_conversations], ["Needs an agent", data.escalated_conversations], ["Resolved", data.resolved_conversations], ["Messages", data.messages_total], ["Resolved without assignment", data.ai_resolved]] : [];
+  const metrics: { label: string; value: number; tone: string; detail: string }[] = data ? [
+    { label: "Total conversations", value: data.conversations_total, tone: "blue", detail: "Across your workspace" },
+    { label: "Open conversations", value: data.open_conversations, tone: "amber", detail: "Waiting for a response" },
+    { label: "Needs an agent", value: data.escalated_conversations, tone: "rose", detail: "Handed off for support" },
+    { label: "Resolved", value: data.resolved_conversations, tone: "green", detail: "Closed conversations" },
+    { label: "Messages", value: data.messages_total, tone: "violet", detail: "Customer and agent replies" },
+    { label: "AI resolved", value: data.ai_resolved, tone: "teal", detail: "Resolved without assignment" },
+  ] : [];
   return <><div className="intro panel-intro"><div><h2>Your support at a glance</h2><p>Live totals across every project in your organization.</p></div><button disabled={loading} onClick={() => void load()}>Refresh</button></div>
-    {error && <div className="error-notice" role="alert">{error}</div>}{loading && <p role="status">Loading analytics...</p>}
-    <div className="metric-grid">{metrics.map(([label, value]) => <article className="card metric" key={label}><span>{label}</span><strong>{value.toLocaleString()}</strong></article>)}</div>
-    {data && <section className="card sources"><h3>Resolution progress</h3><p>{data.resolved_conversations} of {data.conversations_total} conversations resolved</p><progress aria-label="Resolved conversations" value={data.resolved_conversations} max={Math.max(1, data.conversations_total)} /><p className="helper-text">{data.conversations_total ? Math.round(data.resolved_conversations / data.conversations_total * 100) : 0}% resolved. Assigned conversations are included in the total.</p></section>}
-    <section className="card sources"><h3>Keep your workspace moving</h3><div className="quick-actions"><button onClick={() => onNavigate("inbox")}>Open agent inbox</button><button onClick={() => onNavigate("knowledge")}>Manage help content</button><button onClick={() => onNavigate("widget")}>Install your widget</button></div>{data?.conversations_total === 0 && <p className="helper-text">No conversations yet. Create a project, add approved help content, and open the widget preview to get started.</p>}</section>
+    {error && <div className="error-notice" role="alert"><span>{error}</span><button onClick={() => void load()}>Try again</button></div>}
+    {loading && !data && <div className="metric-grid" aria-label="Loading workspace metrics" role="status">{Array.from({ length: 6 }, (_, index) => <div className="card metric metric-skeleton" key={index}><span /><strong /><small /></div>)}</div>}
+    {data && <><div className="section-kicker"><span>WORKSPACE ACTIVITY</span><span>All projects</span></div><div className="metric-grid">{metrics.map(({ label, value, tone, detail }) => <article className={`card metric metric-${tone}`} key={label}><span className="metric-label">{label}</span><strong>{value.toLocaleString()}</strong><small>{detail}</small></article>)}</div>
+    <section className="card sources resolution-card"><div className="resolution-heading"><div><span className="section-kicker-text">SERVICE OUTCOME</span><h3>Resolution progress</h3></div><strong>{data.conversations_total ? Math.round(data.resolved_conversations / data.conversations_total * 100) : 0}<small>%</small></strong></div><p>{data.resolved_conversations.toLocaleString()} of {data.conversations_total.toLocaleString()} conversations resolved</p><progress aria-label="Resolved conversations" value={data.resolved_conversations} max={Math.max(1, data.conversations_total)} /><p className="helper-text">Assigned conversations are included in the total.</p></section>
+    <section className="card sources action-card"><div><span className="section-kicker-text">NEXT STEPS</span><h3>Keep your workspace moving</h3><p className="helper-text">Jump back into your team’s most common tasks.</p></div><div className="quick-actions"><button className="action-primary" onClick={() => onNavigate("inbox")}>Open agent inbox <span aria-hidden="true">→</span></button><button onClick={() => onNavigate("knowledge")}>Manage help content <span aria-hidden="true">→</span></button><button onClick={() => onNavigate("widget")}>Configure chat widget <span aria-hidden="true">→</span></button></div>{data.conversations_total === 0 && <p className="getting-started">No conversations yet. Add approved help content, then open the widget preview to get started.</p>}</section></>}
   </>;
 }
 
