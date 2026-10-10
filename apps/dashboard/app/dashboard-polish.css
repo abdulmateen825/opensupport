@@ -105,3 +105,31 @@ th, td { padding: 12px 13px; }
 .status-pill { font-weight: 600; }
 .domain-list code { border: 1px solid #e6ebf3; background: #f8fafd; }
 .code-block { border: 1px solid #243754; box-shadow: 0 8px 20px #17253b12; }
+
+@media (max-width: 900px) {
+  .content { padding-right: 25px; padding-left: 25px; }
+  .project-picker { min-width: 190px; }
+  .inbox-layout { grid-template-columns: 235px minmax(0, 1fr); }
+}
+
+@media (max-width: 620px) {
+  .sidebar { gap: 5px; }
+  .sidebar .brand { margin-bottom: 5px; }
+  .sidebar nav { padding: 4px 0 7px; scrollbar-width: thin; }
+  .sidebar .side-link { min-height: 36px; }
+  .content { padding: 20px 15px 32px; }
+  .topbar { gap: 12px; padding-bottom: 16px; }
+  .topbar h1 { font-size: 23px; }
+  .topbar-actions { gap: 9px; }
+  .project-picker { min-width: 0; }
+  .project-picker select { width: 100%; }
+  .metric-grid { gap: 10px; }
+  .inbox-layout { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .inbox-list { max-height: 290px; }
+  .inbox-thread { min-height: 430px; }
+  .thread-head { padding: 14px; }
+  .thread-actions { width: 100%; }
+  .thread-actions button { flex: 1; }
+  .reply-form { align-items: stretch; flex-direction: column; }
+  .reply-form button.primary { align-self: flex-end; }
+}
