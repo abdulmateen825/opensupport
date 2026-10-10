@@ -23,3 +23,17 @@
 .content { padding-top: 32px; }
 .topbar { border-color: #e2e7ef; }
 .topbar h1 { color: #18263a; }
+
+/* Keep project context and account actions easy to scan. */
+.topbar-actions { gap: 11px; }
+.project-picker { min-width: 220px; margin: 0; color: #687990; font-size: 10px; }
+.project-picker select {
+  height: 40px;
+  margin-top: 5px;
+  padding: 8px 34px 8px 12px;
+  border-color: #dce3ed;
+  border-radius: 9px;
+  font-size: 12px;
+}
+.sign-out-button { min-height: 40px; padding: 0 13px; color: #52647c; }
+.sign-out-button:hover:not(:disabled) { color: #354fac; }
