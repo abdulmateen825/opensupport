@@ -75,3 +75,19 @@
 .conversation-row.selected { background: #eef2ff; box-shadow: inset 3px 0 #4966d1; }
 .conversation-meta strong { color: #2e4058; font-size: 11px; }
 .conversation-meta small { color: #8390a2; line-height: 1.45; }
+.inbox-thread { background: #fff; }
+.thread-head { min-height: 79px; padding: 16px 20px; }
+.thread-head p { color: #8997aa; font-weight: 700; }
+.thread-head h2 { color: #24364c; }
+.thread-actions button { min-height: 35px; }
+.thread-messages { gap: 12px; background: #f8fafd; }
+.thread-message { padding: 11px 13px; border-radius: 12px; box-shadow: 0 1px 2px #17253b07; }
+.thread-message p { line-height: 1.6; }
+.thread-customer { background: #eef2ff; border-color: #e0e6fb; }
+.thread-agent { background: #eff8f3; border-color: #deeee5; }
+.thread-system { background: #fff9eb; border-color: #f2e9d2; }
+.reply-form { background: #fff; }
+.reply-form textarea { min-height: 46px; border-color: #dce3ed; line-height: 1.5; }
+.reply-form button.primary { min-height: 42px; padding-inline: 16px; }
+.handoff-note { border: 1px solid #f2e6c9; }
+.resolved-banner { border-top: 1px solid #edf0f5; background: #fbfcfe; }
