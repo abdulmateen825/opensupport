@@ -37,3 +37,21 @@
 }
 .sign-out-button { min-height: 40px; padding: 0 13px; color: #52647c; }
 .sign-out-button:hover:not(:disabled) { color: #354fac; }
+
+/* Give the overview data a clearer reading order. */
+.panel-intro { margin-bottom: 5px; }
+.panel-intro h2, .intro h2 { color: #1c2b40; letter-spacing: -.025em; }
+.panel-intro p, .intro > p { max-width: 620px; line-height: 1.65; }
+.section-kicker { margin-top: 18px; }
+.metric.card {
+  min-height: 138px;
+  border-color: #e4e9f1;
+  border-radius: 13px;
+  background: linear-gradient(145deg, #fff, #fcfdff);
+  box-shadow: 0 3px 12px #17253b08;
+}
+.metric-label { letter-spacing: .005em; }
+.metric strong { font-variant-numeric: tabular-nums; }
+.resolution-card { border-radius: 13px; }
+.action-card { border-color: #e4e9f1; border-radius: 13px; }
+.getting-started { border: 1px solid #e8edf5; }
