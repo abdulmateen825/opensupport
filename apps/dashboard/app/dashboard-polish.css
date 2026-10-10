@@ -91,3 +91,17 @@
 .reply-form button.primary { min-height: 42px; padding-inline: 16px; }
 .handoff-note { border: 1px solid #f2e6c9; }
 .resolved-banner { border-top: 1px solid #edf0f5; background: #fbfcfe; }
+.card { border-color: #e3e8f0; border-radius: 13px; }
+.card h3 { color: #26374c; }
+.helper-text { color: #687990; }
+input, select, textarea { border-color: #dce3ed; border-radius: 9px; }
+input::placeholder, textarea::placeholder { color: #9aa6b5; }
+button { border-color: #dce3ed; border-radius: 9px; }
+button:not(.side-link):hover:not(:disabled) { border-color: #cbd5e7; }
+.inline-form button, form > button, .action-primary { box-shadow: 0 2px 5px #314fae20; }
+.table-scroll table { min-width: 560px; }
+th { background: #f8fafd; }
+th, td { padding: 12px 13px; }
+.status-pill { font-weight: 600; }
+.domain-list code { border: 1px solid #e6ebf3; background: #f8fafd; }
+.code-block { border: 1px solid #243754; box-shadow: 0 8px 20px #17253b12; }
