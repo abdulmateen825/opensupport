@@ -55,3 +55,23 @@
 .resolution-card { border-radius: 13px; }
 .action-card { border-color: #e4e9f1; border-radius: 13px; }
 .getting-started { border: 1px solid #e8edf5; }
+
+/* Separate inbox navigation from the conversation content. */
+.inbox-layout { border-color: #e1e7f0; border-radius: 14px; box-shadow: 0 5px 20px #17253b08; }
+.inbox-list { background: #fbfcfe; }
+.inbox-list-head { min-height: 64px; padding: 15px 16px; background: #fff; }
+.inbox-list-head h2 { color: #25364c; font-size: 13px; }
+.inbox-list-head span { margin-top: 3px; color: #8491a3; font-size: 10px; }
+.inbox-list-head button { display: grid; width: 31px; height: 31px; place-items: center; padding: 0; color: #596b83; font-size: 16px; }
+.inbox-filter { width: calc(100% - 28px); margin-top: 9px; border-color: #e0e6ef; background-color: #fff; }
+.agent-label { color: #718097; font-size: 10px; }
+.online-line { color: #67788e; }
+.conversation-row {
+  min-height: 67px;
+  border-top-color: #edf0f5;
+  transition: background .15s ease;
+}
+.conversation-row:hover:not(:disabled) { background: #f3f6fc; }
+.conversation-row.selected { background: #eef2ff; box-shadow: inset 3px 0 #4966d1; }
+.conversation-meta strong { color: #2e4058; font-size: 11px; }
+.conversation-meta small { color: #8390a2; line-height: 1.45; }
